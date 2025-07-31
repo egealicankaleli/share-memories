@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gizem & Ege - Anı Paylaşımı</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="upload-form">
+            <h1>💕 Anılarınızı Bizimle Paylaşın 💕</h1>
+            
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="folderName">Adınız *</label>
+                    <input type="text" id="folderName" name="folderName" required placeholder="Örn: Gizem, Ege, Gizem & Ege...">
+                    <small>Fotoğraflarınız için adınızı girin</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fileInput">Fotoğraf/Video Seçin</label>
+                    <input type="file" id="fileInput" name="files" multiple accept="image/*,video/*,*/*">
+                    <small>Cihazınızdan fotoğraf veya video seçin</small>
+                </div>
+                
+                <div class="file-preview" id="filePreview"></div>
+                
+                <button type="submit" id="uploadBtn" class="upload-btn">
+                    <span id="btnText">💝 Anıları Paylaş</span>
+                    <span id="loading" class="loading hidden">Yükleniyor...</span>
+                </button>
+            </form>
+            
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
