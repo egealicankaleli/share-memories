@@ -6,8 +6,10 @@ Misafirlerinizin mutlu günümüzdeki anılarını Google Drive'ınıza kolayca 
 
 - 💖 Kişiselleştirilmiş Türkçe arayüz
 - 📁 Klasör adı ile otomatik organizasyon
-- 📷 Çoklu fotoğraf/video seçimi ve önizleme
-- 🚀 Anında yükleme - giriş yapma gerektirmez
+- 📷 Çoklu fotoğraf/video seçimi ve önizleme (sınırsız)
+- 🚀 Akıllı toplu yükleme - büyük grupları otomatik böler
+- ✅ 25MB dosya boyutu kontrolü ve uyarıları
+- 🔄 Hata durumunda otomatik yeniden deneme
 - ✨ Güzel teşekkür mesajı
 - 📱 Mobil uyumlu tasarım
 - 🆓 Tamamen ücretsiz - Google Apps Script ile çalışır

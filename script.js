@@ -96,7 +96,7 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Upload files function - Google Apps Script integration (No authentication required!)
+// Upload files function - Google Apps Script integration with batch processing
 async function uploadFiles(folderName, files) {
     setLoading(true);
     clearStatus(); // Clear any previous status messages
@@ -108,66 +108,134 @@ async function uploadFiles(folderName, files) {
             throw new Error('Please configure your Google Apps Script web app URL in script.js');
         }
         
-        // Production: Removed debug logs
+        // Configuration for batch processing
+        const BATCH_SIZE = 5; // Process 5 files at a time to avoid limits
+        const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB limit per file
         
-        showStatus(`📤 ${files.length} dosya "${folderName}" klasörüne yükleniyor...`, 'warning');
-        
-        // Use FormData to avoid CORS preflight issues
-        const formData = new FormData();
-        formData.append('folderName', folderName);
-        
-        // Convert files to base64 and send as form fields (to avoid CORS preflight)
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            
-            // Convert file to base64
-            const base64Data = await convertFileToBase64(file);
-            
-            // Add file data as separate form fields
-            formData.append(`fileName_${i}`, file.name);
-            formData.append(`fileData_${i}`, base64Data);
-            formData.append(`fileMimeType_${i}`, file.type);
-            formData.append(`fileSize_${i}`, file.size.toString());
+        // Check file sizes
+        const oversizedFiles = Array.from(files).filter(file => file.size > MAX_FILE_SIZE);
+        if (oversizedFiles.length > 0) {
+            throw new Error(`Bazı dosyalar çok büyük (25MB üzeri): ${oversizedFiles.map(f => f.name).join(', ')}`);
         }
         
-        formData.append('fileCount', files.length.toString());
+        showStatus(`📤 ${files.length} dosya "${folderName}" klasörüne yükleniyor...\n\nBu işlem biraz vakit alabilir lütfen bekleyiniz ⏳`, 'warning');
         
-        // Send as FormData (no custom headers = no CORS preflight)
-        const response = await fetch(APPS_SCRIPT_CONFIG.WEB_APP_URL, {
-            method: 'POST',
-            body: formData
-        });
+        // Split files into batches
+        const batches = [];
+        for (let i = 0; i < files.length; i += BATCH_SIZE) {
+            batches.push(Array.from(files).slice(i, i + BATCH_SIZE));
+        }
         
-        const result = await response.json();
+        let totalUploaded = 0;
+        const failedFiles = [];
         
-        if (result.success) {
-            // Use a safe count for files
-            const fileCount = result.uploadedFiles && result.uploadedFiles.length ? result.uploadedFiles.length : files.length;
+        // Process each batch
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            const batchNumber = batchIndex + 1;
             
-            const customMessage = `Bu mutlu günümüzde bizi yalnız bırakmadığınız için teşekkür ederiz. Seviliyorsunuz.\n\n-Gizem & Ege\n\n✨ ${fileCount} dosya "${folderName}" klasörüne başarıyla yüklendi.`;
+            showStatus(`📤 Grup ${batchNumber}/${batches.length} yükleniyor... (${batch.length} dosya)\n\nBu işlem biraz vakit alabilir lütfen bekleyiniz ⏳`, 'warning');
             
-            showStatus(customMessage, 'success');
+            try {
+                const batchResult = await uploadBatch(folderName, batch, batchIndex);
+                totalUploaded += batchResult.uploadedCount;
+                
+                if (batchResult.failedFiles.length > 0) {
+                    failedFiles.push(...batchResult.failedFiles);
+                }
+                
+                // Show progress
+                showStatus(`✅ Grup ${batchNumber}/${batches.length} tamamlandı. Toplam: ${totalUploaded}/${files.length} dosya`, 'warning');
+                
+                // Small delay between batches to avoid overwhelming the server
+                if (batchIndex < batches.length - 1) {
+                    await delay(1000);
+                }
+                
+            } catch (batchError) {
+                // If a batch fails, add all its files to failed list
+                failedFiles.push(...batch.map(file => file.name));
+                showStatus(`❌ Grup ${batchNumber} başarısız. Diğer gruplar devam ediyor...`, 'warning');
+                await delay(2000);
+            }
+        }
+        
+        // Show final result
+        if (totalUploaded > 0) {
+            let resultMessage = `Bu mutlu günümüzde bizi yalnız bırakmadığınız için teşekkür ederiz. Seviliyorsunuz.\n\n-Gizem & Ege\n\n✨ ${totalUploaded} dosya "${folderName}" klasörüne başarıyla yüklendi.`;
             
-            // Reset form after a delay to ensure message is visible
-            setTimeout(() => {
-                resetForm();
-                clearStatus(); // Clear status after 10 seconds
-            }, 10000); // Keep message visible for 10 seconds
+            if (failedFiles.length > 0) {
+                resultMessage += `\n\n⚠️ ${failedFiles.length} dosya yüklenemedi. Lütfen tekrar deneyin.`;
+            }
+            
+            showStatus(resultMessage, totalUploaded === files.length ? 'success' : 'warning');
         } else {
-            throw new Error(result.error || 'Upload failed');
+            throw new Error('Hiçbir dosya yüklenemedi');
         }
+        
+        // Reset form after a delay
+        setTimeout(() => {
+            resetForm();
+            clearStatus();
+        }, 12000); // Keep message visible for 12 seconds for longer messages
         
     } catch (error) {
         if (error.message.includes('configure your Google Apps Script')) {
             showStatus('❌ Lütfen Google Apps Script URL\'ini yapılandırın', 'error');
         } else if (error.message.includes('Failed to fetch')) {
             showStatus('❌ Bağlantı hatası. Lütfen tekrar deneyin.', 'error');
+        } else if (error.message.includes('çok büyük')) {
+            showStatus(`❌ ${error.message}`, 'error');
         } else {
             showStatus('❌ Yükleme başarısız. Lütfen tekrar deneyin.', 'error');
         }
     } finally {
         setLoading(false);
     }
+}
+
+// Upload a single batch of files
+async function uploadBatch(folderName, files, batchIndex) {
+    const formData = new FormData();
+    formData.append('folderName', folderName);
+    formData.append('batchIndex', batchIndex.toString());
+    
+    // Convert files to base64 and add to FormData
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Convert file to base64
+        const base64Data = await convertFileToBase64(file);
+        
+        // Add file data as separate form fields
+        formData.append(`fileName_${i}`, file.name);
+        formData.append(`fileData_${i}`, base64Data);
+        formData.append(`fileMimeType_${i}`, file.type);
+        formData.append(`fileSize_${i}`, file.size.toString());
+    }
+    
+    formData.append('fileCount', files.length.toString());
+    
+    // Send batch to Google Apps Script
+    const response = await fetch(APPS_SCRIPT_CONFIG.WEB_APP_URL, {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+        throw new Error(result.error || 'Batch upload failed');
+    }
+    
+    return {
+        uploadedCount: result.uploadedFiles ? result.uploadedFiles.length : files.length,
+        failedFiles: [] // We could get this from the server response if needed
+    };
 }
 
 // Helper functions
@@ -213,6 +281,7 @@ function clearStatus() {
     status.classList.remove('show');
 }
 
+// Helper function for delays between batches
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
